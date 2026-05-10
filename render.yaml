@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: member-panel
+    env: python
+    plan: free
+    rootDir: .
+    buildCommand: python -m py_compile app.py db.py scripts/migrate_sqlite_to_postgres.py
+    startCommand: python app.py
+    envVars:
+      - key: APP_HOST
+        value: 0.0.0.0
+      - key: APP_PORT
+        value: 10000
+      - key: MEMBER_PANEL_USERS
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: member-panel-db
+          property: connectionString
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+databases:
+  - name: member-panel-db

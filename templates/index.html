@@ -74,11 +74,12 @@
       <h1 style="margin-top:0;">会员续费协作后台</h1>
       <p class="muted">两个人一起用的轻量后台。先登录再操作。</p>
       <form method="post" action="/login">
+        <input type="hidden" name="csrf_token" value="" />
         <p><input name="username" placeholder="用户名" required /></p>
         <p><input name="password" type="password" placeholder="密码" required /></p>
         <p><button class="btn-green" type="submit">登录</button></p>
       </form>
-      <div class="muted">默认账号如果没改过：admin / admin123，partner / partner123</div>
+      <div class="muted">请使用已配置的协作账号登录。</div>
     </div>
   </div>
 
@@ -103,6 +104,7 @@
       <div class="card">
         <h2>新增会员</h2>
         <form method="post" action="/members/add">
+          <input type="hidden" name="csrf_token" value="" />
           <div class="row">
             <p><input name="name" placeholder="姓名/备注名" required /></p>
             <p><input name="qq" placeholder="QQ号" /></p>
@@ -185,6 +187,26 @@
   </div>
 
   <script>
+    function getCookie(name) {
+      const prefix = `${name}=`;
+      const parts = document.cookie ? document.cookie.split(/;\s*/) : [];
+      for (const part of parts) {
+        if (part.startsWith(prefix)) return decodeURIComponent(part.slice(prefix.length));
+      }
+      return '';
+    }
+
+    function getCsrfToken() {
+      return getCookie('member_csrf');
+    }
+
+    function applyCsrfTokens(root = document) {
+      const token = getCsrfToken();
+      root.querySelectorAll('input[name="csrf_token"]').forEach(el => {
+        el.value = token;
+      });
+    }
+
     function escapeHtml(v) {
       return String(v ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
     }
@@ -239,7 +261,7 @@
             <td>${pill(row.days_left)}</td>
             <td>
               <div class="actions">
-                <form method="post" action="/members/renew"><input type="hidden" name="member_id" value="${row.id}"><input type="hidden" name="months" value="1"><button class="btn-orange small" type="submit">续费 1 个月</button></form>
+                <form method="post" action="/members/renew"><input type="hidden" name="csrf_token" value="${escapeHtml(getCsrfToken())}"><input type="hidden" name="member_id" value="${row.id}"><input type="hidden" name="months" value="1"><button class="btn-orange small" type="submit">续费 1 个月</button></form>
                 <button class="small copy-btn" type="button" onclick="copyReminder(${row.id}, '${escapeHtml(row.name)}', '${escapeHtml(row.qq || '')}', '${escapeHtml(row.expire_date)}')">复制提醒文案</button>
               </div>
             </td>
@@ -276,6 +298,7 @@
             <strong>${escapeHtml(row.name)}</strong>
             <div class="edit-form" id="edit-${row.id}">
               <form method="post" action="/members/update">
+                <input type="hidden" name="csrf_token" value="${escapeHtml(getCsrfToken())}" />
                 <input type="hidden" name="member_id" value="${row.id}" />
                 <div class="edit-grid">
                   <input name="name" value="${escapeHtml(row.name)}" placeholder="姓名" required />
@@ -300,7 +323,7 @@
           <td>${pill(daysLeft)}</td>
           <td>
             <div class="actions">
-              <form method="post" action="/members/renew"><input type="hidden" name="member_id" value="${row.id}"><input type="hidden" name="months" value="1"><button class="btn-orange small" type="submit">续费 1 个月</button></form>
+              <form method="post" action="/members/renew"><input type="hidden" name="csrf_token" value="${escapeHtml(getCsrfToken())}"><input type="hidden" name="member_id" value="${row.id}"><input type="hidden" name="months" value="1"><button class="btn-orange small" type="submit">续费 1 个月</button></form>
               <button class="small copy-btn" type="button" onclick="copyReminder(${row.id}, '${escapeHtml(row.name)}', '${escapeHtml(row.qq || '')}', '${escapeHtml(row.expire_date)}')">复制提醒文案</button>
               <button class="small btn-slate" type="button" onclick="toggleEdit(${row.id})">编辑</button>
             </div>
@@ -311,6 +334,7 @@
 
     function renderMembers(rows) {
       document.getElementById('membersBody').innerHTML = rows.map(memberRow).join('');
+      applyCsrfTokens(document.getElementById('membersBody'));
     }
 
     function renderRenewals(rows) {
@@ -334,7 +358,11 @@
         </tbody></table></div>`;
     }
 
-    function renderUsers(rows) {
+    function renderUsers(rows, currentUser) {
+      if (currentUser?.role !== 'admin') {
+        document.getElementById('usersWrap').innerHTML = '<div class="empty">仅管理员可查看协作账号。</div>';
+        return;
+      }
       document.getElementById('usersWrap').innerHTML = `
         <div style="overflow:auto;"><table><thead><tr><th>ID</th><th>用户名</th><th>显示名</th><th>角色</th><th>状态</th></tr></thead><tbody>
         ${rows.map(row => `<tr><td>${row.id}</td><td>${escapeHtml(row.username)}</td><td>${escapeHtml(row.display_name)}</td><td>${escapeHtml(row.role)}</td><td>${row.active ? '启用' : '停用'}</td></tr>`).join('')}
@@ -380,11 +408,12 @@
       renderDue(data.due || []);
       renderMembers(data.members || []);
       renderRenewals(data.renewals || []);
-      renderUsers(data.users || []);
+      renderUsers(data.users || [], data.current_user || me.user);
       renderAudit(data.audit_logs || []);
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+      applyCsrfTokens();
       const searchBtn = document.getElementById('searchBtn');
       const resetBtn = document.getElementById('resetBtn');
       const searchInput = document.getElementById('searchInput');
