@@ -32,3 +32,13 @@ APP_HOST = os.environ.get('APP_HOST', '127.0.0.1')
 APP_PORT = int(os.environ.get('APP_PORT', '8000'))
 DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
 DB_BACKEND = 'postgres' if DATABASE_URL else 'sqlite'
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+APP_SECURE_COOKIES = env_bool('APP_SECURE_COOKIES', default=bool(DATABASE_URL))

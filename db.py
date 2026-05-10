@@ -18,8 +18,11 @@ except Exception:  # pragma: no cover - optional dependency for sqlite-only mode
     psycopg = None
     dict_row = None
 
+
 PBKDF2_ROUNDS = 120_000
 SESSION_DAYS = 30
+
+
 IS_POSTGRES = DB_BACKEND == 'postgres'
 
 
@@ -302,6 +305,21 @@ def list_audit_logs(limit: int = 100) -> list[dict[str, Any]]:
 
 def add_member(name: str, qq: str, group_name: str, join_date: str, notes: str = '') -> int:
     jd = parse_date(join_date)
+    name = name.strip()
+    qq = qq.strip()
+    group_name = group_name.strip()
+    notes = notes.strip()
+    if not name:
+        raise ValueError('姓名不能为空')
+    if qq:
+        with get_conn() as conn:
+            existing = run(
+                conn,
+                'SELECT id FROM members WHERE qq = ? AND active = 1 ORDER BY id ASC LIMIT 1',
+                (qq,),
+            ).fetchone()
+            if existing:
+                raise ValueError(f'QQ {qq} 已存在活跃会员（ID={existing["id"]}），请直接编辑或续费原记录')
     expire_date = add_months_safe(jd, 1)
     now = now_iso()
     with get_conn() as conn:
@@ -309,11 +327,11 @@ def add_member(name: str, qq: str, group_name: str, join_date: str, notes: str =
             cur = run(conn, '''INSERT INTO members
                (name, qq, group_name, join_date, expire_date, notes, active, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-               RETURNING id''', (name.strip(), qq.strip(), group_name.strip(), fmt_date(jd), fmt_date(expire_date), notes.strip(), now, now))
+               RETURNING id''', (name, qq, group_name, fmt_date(jd), fmt_date(expire_date), notes, now, now))
             return int(cur.fetchone()['id'])
         cur = run(conn, '''INSERT INTO members
            (name, qq, group_name, join_date, expire_date, notes, active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)''', (name.strip(), qq.strip(), group_name.strip(), fmt_date(jd), fmt_date(expire_date), notes.strip(), now, now))
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)''', (name, qq, group_name, fmt_date(jd), fmt_date(expire_date), notes, now, now))
         return int(cur.lastrowid)
 
 
@@ -360,10 +378,24 @@ def renew_member(member_id: int, months: int = 1, note: str = '', operator_user_
 def update_member(member_id: int, name: str, qq: str, group_name: str, join_date: str, expire_date: str, notes: str, active: bool = True) -> None:
     parse_date(join_date)
     parse_date(expire_date)
+    name = name.strip()
+    qq = qq.strip()
+    group_name = group_name.strip()
+    notes = notes.strip()
+    if not name:
+        raise ValueError('姓名不能为空')
     with get_conn() as conn:
+        if qq:
+            existing = run(
+                conn,
+                'SELECT id FROM members WHERE qq = ? AND active = 1 AND id <> ? ORDER BY id ASC LIMIT 1',
+                (qq, member_id),
+            ).fetchone()
+            if existing:
+                raise ValueError(f'QQ {qq} 已存在其他活跃会员（ID={existing["id"]}），请不要改成重复记录')
         run(conn, '''UPDATE members
            SET name = ?, qq = ?, group_name = ?, join_date = ?, expire_date = ?, notes = ?, active = ?, updated_at = ?
-           WHERE id = ?''', (name.strip(), qq.strip(), group_name.strip(), join_date, expire_date, notes.strip(), 1 if active else 0, now_iso(), member_id))
+           WHERE id = ?''', (name, qq, group_name, join_date, expire_date, notes, 1 if active else 0, now_iso(), member_id))
 
 
 def due_members(remind_days: int = 5, query: str = '') -> list[dict[str, Any]]:
