@@ -18,11 +18,8 @@ except Exception:  # pragma: no cover - optional dependency for sqlite-only mode
     psycopg = None
     dict_row = None
 
-
 PBKDF2_ROUNDS = 120_000
 SESSION_DAYS = 30
-
-
 IS_POSTGRES = DB_BACKEND == 'postgres'
 
 
@@ -52,7 +49,7 @@ def get_conn():
         conn.close()
 
 
-def run(conn, sql: str, params: tuple[Any, ...] = ()):
+def run(conn, sql: str, params: tuple[Any, ...] = ()): 
     if IS_POSTGRES:
         sql = sql.replace('?', '%s')
     return conn.execute(sql, params)
@@ -96,9 +93,7 @@ def verify_password(password: str, salt_hex: str, password_hash: str) -> bool:
 def init_db() -> None:
     with get_conn() as conn:
         if IS_POSTGRES:
-            run(
-                conn,
-                '''
+            run(conn, '''
                 CREATE TABLE IF NOT EXISTS users (
                     id BIGSERIAL PRIMARY KEY,
                     username TEXT UNIQUE NOT NULL,
@@ -110,11 +105,8 @@ def init_db() -> None:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
-                '''
-            )
-            run(
-                conn,
-                '''
+            ''')
+            run(conn, '''
                 CREATE TABLE IF NOT EXISTS sessions (
                     id BIGSERIAL PRIMARY KEY,
                     user_id BIGINT NOT NULL,
@@ -122,11 +114,8 @@ def init_db() -> None:
                     created_at TEXT NOT NULL,
                     expires_at TEXT NOT NULL
                 )
-                '''
-            )
-            run(
-                conn,
-                '''
+            ''')
+            run(conn, '''
                 CREATE TABLE IF NOT EXISTS members (
                     id BIGSERIAL PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -139,11 +128,8 @@ def init_db() -> None:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
-                '''
-            )
-            run(
-                conn,
-                '''
+            ''')
+            run(conn, '''
                 CREATE TABLE IF NOT EXISTS renewals (
                     id BIGSERIAL PRIMARY KEY,
                     member_id BIGINT NOT NULL,
@@ -155,11 +141,8 @@ def init_db() -> None:
                     created_at TEXT NOT NULL,
                     operator_user_id BIGINT
                 )
-                '''
-            )
-            run(
-                conn,
-                '''
+            ''')
+            run(conn, '''
                 CREATE TABLE IF NOT EXISTS audit_logs (
                     id BIGSERIAL PRIMARY KEY,
                     user_id BIGINT,
@@ -169,8 +152,7 @@ def init_db() -> None:
                     details TEXT,
                     created_at TEXT NOT NULL
                 )
-                '''
-            )
+            ''')
         else:
             cur = conn.cursor()
             cur.execute('''
@@ -249,31 +231,26 @@ def create_user(username: str, display_name: str, password: str, role: str = 'ad
     salt_hex, password_hash = hash_password(password)
     now = now_iso()
     with get_conn() as conn:
-        cur = run(
-            conn,
-            '''INSERT INTO users
+        if IS_POSTGRES:
+            cur = run(conn, '''INSERT INTO users
                (username, display_name, password_hash, password_salt, role, active, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, 1, ?, ?)''',
-            (username, display_name, password_hash, salt_hex, role, now, now),
-        )
-        return int(cur.fetchone()['id']) if IS_POSTGRES else int(cur.lastrowid)
+               VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+               RETURNING id''', (username, display_name, password_hash, salt_hex, role, now, now))
+            return int(cur.fetchone()['id'])
+        cur = run(conn, '''INSERT INTO users
+           (username, display_name, password_hash, password_salt, role, active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 1, ?, ?)''', (username, display_name, password_hash, salt_hex, role, now, now))
+        return int(cur.lastrowid)
 
 
 def list_users() -> list[dict[str, Any]]:
     with get_conn() as conn:
-        return run(
-            conn,
-            'SELECT id, username, display_name, role, active, created_at, updated_at FROM users ORDER BY id ASC'
-        ).fetchall()
+        return run(conn, 'SELECT id, username, display_name, role, active, created_at, updated_at FROM users ORDER BY id ASC').fetchall()
 
 
 def get_user(user_id: int) -> dict[str, Any] | None:
     with get_conn() as conn:
-        return run(
-            conn,
-            'SELECT id, username, display_name, role, active, created_at, updated_at FROM users WHERE id = ?',
-            (user_id,),
-        ).fetchone()
+        return run(conn, 'SELECT id, username, display_name, role, active, created_at, updated_at FROM users WHERE id = ?', (user_id,)).fetchone()
 
 
 def authenticate_user(username: str, password: str) -> dict[str, Any] | None:
@@ -283,13 +260,7 @@ def authenticate_user(username: str, password: str) -> dict[str, Any] | None:
             return None
         if not verify_password(password, row['password_salt'], row['password_hash']):
             return None
-        return {
-            'id': row['id'],
-            'username': row['username'],
-            'display_name': row['display_name'],
-            'role': row['role'],
-            'active': row['active'],
-        }
+        return {'id': row['id'], 'username': row['username'], 'display_name': row['display_name'], 'role': row['role'], 'active': row['active']}
 
 
 def create_session(user_id: int) -> str:
@@ -297,11 +268,7 @@ def create_session(user_id: int) -> str:
     now = now_dt()
     expires = now + timedelta(days=SESSION_DAYS)
     with get_conn() as conn:
-        run(
-            conn,
-            'INSERT INTO sessions (user_id, token, created_at, expires_at) VALUES (?, ?, ?, ?)',
-            (user_id, token, now.isoformat(timespec='seconds'), expires.isoformat(timespec='seconds')),
-        )
+        run(conn, 'INSERT INTO sessions (user_id, token, created_at, expires_at) VALUES (?, ?, ?, ?)', (user_id, token, now.isoformat(timespec='seconds'), expires.isoformat(timespec='seconds')))
     return token
 
 
@@ -310,15 +277,10 @@ def get_user_by_session(token: str) -> dict[str, Any] | None:
         return None
     now = now_iso()
     with get_conn() as conn:
-        row = run(
-            conn,
-            '''SELECT u.id, u.username, u.display_name, u.role, u.active, s.expires_at
+        return run(conn, '''SELECT u.id, u.username, u.display_name, u.role, u.active, s.expires_at
                FROM sessions s
                JOIN users u ON u.id = s.user_id
-               WHERE s.token = ? AND u.active = 1 AND s.expires_at >= ?''',
-            (token, now),
-        ).fetchone()
-        return row
+               WHERE s.token = ? AND u.active = 1 AND s.expires_at >= ?''', (token, now)).fetchone()
 
 
 def delete_session(token: str) -> None:
@@ -330,24 +292,12 @@ def delete_session(token: str) -> None:
 
 def add_audit_log(user_id: int | None, action: str, target_type: str, target_id: str = '', details: str = '') -> None:
     with get_conn() as conn:
-        run(
-            conn,
-            'INSERT INTO audit_logs (user_id, action, target_type, target_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-            (user_id, action, target_type, target_id, details, now_iso()),
-        )
+        run(conn, 'INSERT INTO audit_logs (user_id, action, target_type, target_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?)', (user_id, action, target_type, target_id, details, now_iso()))
 
 
 def list_audit_logs(limit: int = 100) -> list[dict[str, Any]]:
     with get_conn() as conn:
-        return run(
-            conn,
-            '''SELECT a.*, u.username, u.display_name
-               FROM audit_logs a
-               LEFT JOIN users u ON u.id = a.user_id
-               ORDER BY a.id DESC
-               LIMIT ?''',
-            (limit,),
-        ).fetchall()
+        return run(conn, '''SELECT a.*, u.username, u.display_name FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id ORDER BY a.id DESC LIMIT ?''', (limit,)).fetchall()
 
 
 def add_member(name: str, qq: str, group_name: str, join_date: str, notes: str = '') -> int:
@@ -355,14 +305,16 @@ def add_member(name: str, qq: str, group_name: str, join_date: str, notes: str =
     expire_date = add_months_safe(jd, 1)
     now = now_iso()
     with get_conn() as conn:
-        cur = run(
-            conn,
-            '''INSERT INTO members
+        if IS_POSTGRES:
+            cur = run(conn, '''INSERT INTO members
                (name, qq, group_name, join_date, expire_date, notes, active, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)''',
-            (name.strip(), qq.strip(), group_name.strip(), fmt_date(jd), fmt_date(expire_date), notes.strip(), now, now),
-        )
-        return int(cur.fetchone()['id']) if IS_POSTGRES else int(cur.lastrowid)
+               VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+               RETURNING id''', (name.strip(), qq.strip(), group_name.strip(), fmt_date(jd), fmt_date(expire_date), notes.strip(), now, now))
+            return int(cur.fetchone()['id'])
+        cur = run(conn, '''INSERT INTO members
+           (name, qq, group_name, join_date, expire_date, notes, active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)''', (name.strip(), qq.strip(), group_name.strip(), fmt_date(jd), fmt_date(expire_date), notes.strip(), now, now))
+        return int(cur.lastrowid)
 
 
 def list_members(active_only: bool = True, query: str = '') -> list[dict[str, Any]]:
@@ -393,59 +345,25 @@ def renew_member(member_id: int, months: int = 1, note: str = '', operator_user_
         member = run(conn, 'SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
         if not member:
             raise ValueError('member not found')
-
         today = date.today()
         current_expire = parse_date(member['expire_date'])
         base_date = current_expire if current_expire >= today else today
         new_expire = add_months_safe(base_date, months)
         now = now_iso()
-
-        run(
-            conn,
-            'UPDATE members SET expire_date = ?, updated_at = ? WHERE id = ?',
-            (fmt_date(new_expire), now, member_id),
-        )
-        run(
-            conn,
-            '''INSERT INTO renewals
-               (member_id, renew_date, months_added, before_expire_date, after_expire_date, note, created_at, operator_user_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-            (
-                member_id,
-                fmt_date(today),
-                months,
-                member['expire_date'],
-                fmt_date(new_expire),
-                note.strip(),
-                now,
-                operator_user_id,
-            ),
-        )
-        updated = run(conn, 'SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
-        return updated
+        run(conn, 'UPDATE members SET expire_date = ?, updated_at = ? WHERE id = ?', (fmt_date(new_expire), now, member_id))
+        run(conn, '''INSERT INTO renewals
+           (member_id, renew_date, months_added, before_expire_date, after_expire_date, note, created_at, operator_user_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', (member_id, fmt_date(today), months, member['expire_date'], fmt_date(new_expire), note.strip(), now, operator_user_id))
+        return run(conn, 'SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
 
 
 def update_member(member_id: int, name: str, qq: str, group_name: str, join_date: str, expire_date: str, notes: str, active: bool = True) -> None:
     parse_date(join_date)
     parse_date(expire_date)
     with get_conn() as conn:
-        run(
-            conn,
-            '''UPDATE members
-               SET name = ?, qq = ?, group_name = ?, join_date = ?, expire_date = ?, notes = ?, active = ?, updated_at = ?
-               WHERE id = ?''',
-            (
-                name.strip(),
-                qq.strip(),
-                group_name.strip(),
-                join_date,
-                expire_date,
-                notes.strip(),
-                1 if active else 0,
-                now_iso(),
-                member_id,
-            ),
-        )
+        run(conn, '''UPDATE members
+           SET name = ?, qq = ?, group_name = ?, join_date = ?, expire_date = ?, notes = ?, active = ?, updated_at = ?
+           WHERE id = ?''', (name.strip(), qq.strip(), group_name.strip(), join_date, expire_date, notes.strip(), 1 if active else 0, now_iso(), member_id))
 
 
 def due_members(remind_days: int = 5, query: str = '') -> list[dict[str, Any]]:
@@ -478,22 +396,11 @@ def dashboard_payload(remind_days: int = 5, query: str = '') -> dict[str, Any]:
         'query': query,
         'db_backend': DB_BACKEND,
     }
-    return {
-        'summary': summary,
-        'due': due,
-        'members': members,
-    }
+    return {'summary': summary, 'due': due, 'members': members}
 
 
 def list_renewals(limit: int = 100) -> list[dict[str, Any]]:
     with get_conn() as conn:
-        return run(
-            conn,
-            '''SELECT r.*, m.name, m.qq, u.username AS operator_username, u.display_name AS operator_display_name
-               FROM renewals r
-               JOIN members m ON m.id = r.member_id
-               LEFT JOIN users u ON u.id = r.operator_user_id
-               ORDER BY r.id DESC
-               LIMIT ?''',
-            (limit,),
-        ).fetchall()
+        return run(conn, '''SELECT r.*, m.name, m.qq, u.username AS operator_username, u.display_name AS operator_display_name
+           FROM renewals r JOIN members m ON m.id = r.member_id LEFT JOIN users u ON u.id = r.operator_user_id
+           ORDER BY r.id DESC LIMIT ?''', (limit,)).fetchall()
