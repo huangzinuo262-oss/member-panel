@@ -1,0 +1,2 @@
+# 标准库模式可直接运行；连接 Postgres 时需要本依赖
+psycopg[binary]>=3.2,<4
