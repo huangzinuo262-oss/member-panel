@@ -81,6 +81,7 @@ class AppHandler(BaseHTTPRequestHandler):
     def _page_html(self, extra_headers: list[tuple[str, str]] | None = None) -> str:
         html = HTML_PATH.read_text(encoding='utf-8')
         token = self._response_csrf_token(extra_headers)
+        html = html.replace('window.__CSRF_TOKEN__ = \'\';', f"window.__CSRF_TOKEN__ = '{token}';")
         return html.replace('name="csrf_token" value=""', f'name="csrf_token" value="{token}"')
 
     def _check_csrf(self, data: dict[str, list[str]]) -> bool:

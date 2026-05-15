@@ -187,6 +187,8 @@
   </div>
 
   <script>
+    window.__CSRF_TOKEN__ = '';
+
     function getCookie(name) {
       const prefix = `${name}=`;
       const parts = document.cookie ? document.cookie.split(/;\s*/) : [];
@@ -197,13 +199,14 @@
     }
 
     function getCsrfToken() {
-      return getCookie('member_csrf');
+      return window.__CSRF_TOKEN__ || getCookie('member_csrf') || '';
     }
 
     function applyCsrfTokens(root = document) {
       const token = getCsrfToken();
+      if (!token) return;
       root.querySelectorAll('input[name="csrf_token"]').forEach(el => {
-        el.value = token;
+        if (!el.value) el.value = token;
       });
     }
 
