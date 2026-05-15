@@ -68,6 +68,13 @@ class AppHandler(BaseHTTPRequestHandler):
         token = secrets.token_urlsafe(24)
         return ('Set-Cookie', f'member_csrf={token}; {self._cookie_flags()}; Max-Age=2592000')
 
+    def _page_html(self) -> str:
+        html = HTML_PATH.read_text(encoding='utf-8')
+        token = self._csrf_token()
+        if not token:
+            token = secrets.token_urlsafe(24)
+        return html.replace('name="csrf_token" value=""', f'name="csrf_token" value="{token}"')
+
     def _check_csrf(self, data: dict[str, list[str]]) -> bool:
         form_token = (data.get('csrf_token') or [''])[0].strip()
         cookie_token = self._csrf_token()
@@ -118,12 +125,11 @@ class AppHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
 
         if parsed.path == '/login':
-            html = HTML_PATH.read_text(encoding='utf-8')
             headers: list[tuple[str, str]] = []
             csrf_cookie = self._ensure_csrf_cookie()
             if csrf_cookie:
                 headers.append(csrf_cookie)
-            self._send(html, extra_headers=headers)
+            self._send(self._page_html(), extra_headers=headers)
             return
 
         if parsed.path == '/logout':
@@ -174,12 +180,11 @@ class AppHandler(BaseHTTPRequestHandler):
             if not user:
                 self._redirect('/login')
                 return
-            html = HTML_PATH.read_text(encoding='utf-8')
             headers: list[tuple[str, str]] = []
             csrf_cookie = self._ensure_csrf_cookie()
             if csrf_cookie:
                 headers.append(csrf_cookie)
-            self._send(html, extra_headers=headers)
+            self._send(self._page_html(), extra_headers=headers)
             return
 
         self._send('Not Found', status=404, content_type='text/plain; charset=utf-8')
